@@ -44,7 +44,7 @@ Windows 7 with sp1 以及更新的版本，系统语言必须是中文。
 
 本软件使用 GNU Affero General Public License v3.0 开源，若要用于其它用途，请仔细阅读开源协议。
 
-唯一的开源地址：https://github.com/super1207/MiraiCQ
+开源地址：https://github.com/super1207/MiraiCQ
 
 #### 交流与问题反馈：
 1. [issues](https://github.com/super1207/MiraiCQ/issues)
