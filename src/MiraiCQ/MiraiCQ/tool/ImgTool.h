@@ -13,21 +13,14 @@ public:
 		std::string type = "";
 		std::string md5_str = "";
 	};
-	/*
-	* 描述：获得图片信息
-	* 参数`url`：图片的url
-	* 参数`info`：输出图片信息
-	* 返回值：成功返回`true`，失败返回`false`
-	*/
-	static bool get_info(const std::string& url, ImgInfo & info, bool isqq);
 
 	/*
 	* 描述：下载图片
 	* 参数`url`：图片的url
-	* 参数`save_path`：图片保存路径
+	* 参数`content`：下载完成的图片字节集
 	* 返回值：成功返回`true`，失败返回`false`
 	*/
-	static bool download_img(const std::string& url, const std::string& save_path) ;
+	static bool download_img(const std::string& url, std::string& content) ;
 
 	/*
 	* 描述：获得图片信息

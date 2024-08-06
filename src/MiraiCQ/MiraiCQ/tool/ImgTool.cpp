@@ -121,120 +121,13 @@ static size_t cb(void* data, size_t size, size_t nmemb, void* content)
     return realsize;
 }
 
-bool ImgTool::get_info(const std::string& url, ImgInfo& info,bool isqq)
-{
- 
-    if(!isqq){
-        char err_buf_temp[CURL_ERROR_SIZE] = { 0 };
-        long retCode = 0;
-        std::string content;
-        CURL* curl = curl_easy_init();
-        if (!curl) {
-            //printf("curl err\n");
-            return false;
-        }
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_POST, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, false);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cb);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&content);
-        curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, err_buf_temp);
-        CURLcode res = curl_easy_perform(curl);
-        if (res != CURLE_OK)
-        {
-            //printf("err:%s\n", err_buf_temp);
-            return false;
-        }
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &retCode);
-        curl_easy_cleanup(curl);
-        if (retCode != 200) {
-            //printf("curl err:retcode:%d\n", retCode);
-            return false;
-        }
-        //printf("content size:%d\n", content.size());
-        info = parse_img(content);
-        info.size = content.size();
-        if (info.height == 0 || info.width == 0 || info.size == 0 || info.type == "")
-        {
-            return false;
-        }
-        info.md5_str = StrTool::toupper(md5(content));
-        return true;
-    }
-    else {
-        using namespace httplib;
-        std::string body;
-        unsigned size = 0;
-        std::string host;
-        std::string get_url;
-        try
-        {
-            auto ret_vec = StrTool::match(url, "((http://|https://)(.*?)(/.*))");
-            if (ret_vec.size() >= 5)
-            {
-                host = "http://" + ret_vec[3];
-                get_url = ret_vec[4];
-            }
-            else
-            {
-                return false;
-            }
-            httplib::Client cli(host);
-            auto res = cli.Get(
-                get_url.c_str(), Headers(),
-                [&](const Response& response) {
-                    if (response.status != 200)
-                    {
-                        return false;
-                    }
-                    std::string size_str = response.get_header_value("Content-Length");
-                    if (size_str != "")
-                    {
-                        size = (unsigned int)std::stoll(size_str);
-                    }
-                    return true;
-                },
-                [&](const char* data, size_t data_length) {
-                    body.append(data, data_length);
-                    info = parse_img(body);
-                    if (info.type == "")
-                    {
-                        /* 说明是无法解析的图片格式 */
-                        return false;
-                    }
-                    if (info.height == 0 || info.width == 0)
-                    {
-                        /* 说明能解析，只是读取的数据还不够多 */
-                        return true; /* 继续读 */
-                    }
-                    /* 说明解析成功了 */
-                    return false;
-                });
-        }
-        catch (const std::exception&)
-        {
-            /* 出现异常，通常是网络访问错误 */
-            return false;
-        }
-        info.size = size;
-        if (info.height == 0 || info.width == 0 || info.size == 0 || info.type == "")
-        {
-            /* 没有获取所有信息，说明解析失败 */
-            return false;
-        }
-        return  true;
-    }
-}
-
-bool ImgTool::download_img(const std::string& url, const std::string& save_path) 
+bool ImgTool::download_img(const std::string& url,std::string& content) 
 {
     char err_buf_temp[CURL_ERROR_SIZE] = { 0 };
     long retCode = 0;
-    std::string content;
+    content.clear();
     CURL* curl = curl_easy_init();
     if (!curl) {
-        //printf("curl err\n");
         return false;
     }
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -247,30 +140,11 @@ bool ImgTool::download_img(const std::string& url, const std::string& save_path)
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK)
     {
-        //printf("err:%s\n", err_buf_temp);
         return false;
     }
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &retCode);
     curl_easy_cleanup(curl);
     if (retCode != 200) {
-        //printf("curl err:retcode:%d\n", retCode);
-        return false;
-    }
-    try {
-        std::ofstream out_file;
-        out_file.open(save_path, std::ios::binary);
-        if (!out_file.is_open())
-        {
-            /* 文件打开失败 */
-            return false;
-        }
-        /* 写入文件 */
-        out_file.write(content.data(), content.size());
-        /* 关闭文件 */
-        out_file.close();
-    }
-    catch (const std::exception&)
-    {
         return false;
     }
     return  true;

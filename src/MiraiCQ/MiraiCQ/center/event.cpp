@@ -428,78 +428,33 @@ static bool deal_json_array(Json::Value & json_arr)
 		if (type_str == "image")
 		{
 			Json::Value dat_json = node.get("data", Json::Value());
-			std::string md5_str;
-			std::string url;
-			std::string file_str = StrTool::get_str_from_json(dat_json, "file", "");
-			bool is_qq = false;
-			if (is_qq_url(dat_json)) {
-				is_qq = true;
-				md5_str = get_md5_from_file_str(file_str);
-				if (md5_str == "") {
-					md5_str = get_md5_from_imgurl(StrTool::get_str_from_json(dat_json, "url", ""));
-				}
-				if (md5_str == "") {
-					md5_str = get_md5_from_imgurl(StrTool::get_str_from_json(dat_json, "file", ""));
-				}
-				url = "https://gchat.qpic.cn/gchatpic_new/0/0-0-" + md5_str + "/0?term=2";
+			std::string file_str = StrTool::get_str_from_json(dat_json, "url", "");
+
+			if (file_str == "") {
+				file_str = StrTool::get_str_from_json(dat_json, "file", "");
 			}
-			else {
-				url = StrTool::get_str_from_json(dat_json, "url", "");
-			}
-			
-			if (md5_str == "" && is_qq == true)
-			{
-				MiraiLog::get_instance()->add_warning_log("Center", "无法从file字段获取qq图片的md5");
+
+			if (file_str.rfind("http://") != 0 && file_str.rfind("https://") != 0) {
+				MiraiLog::get_instance()->add_warning_log("Center", "无法获取图片的url");
 				node = Json::Value();
 				continue;
 			}
 
-			if (url == "") {
-				MiraiLog::get_instance()->add_warning_log("Center", "无法构造图片url");
-				node = Json::Value();
-				continue;
-			}
-			
-			/* 获得图片信息需要下载一部分图片 */
-			ImgTool::ImgInfo info;
-			
-			/* 这里进行两次尝试，增大成功概率 */
-			if (!ImgTool::get_info(url, info, is_qq) && !ImgTool::get_info(url, info, is_qq))
-			{
-				MiraiLog::get_instance()->add_warning_log("Center", "无法从url中获取图片信息:" + url);
-				/* 
-					即使无法获得图片信息，也需要写入url,md5等信息到cqimg文件
-					node = Json::Value();
-					continue;
-				*/
-				/* 无法获得图片信息，则类型使用image，之后若使用`CQ_getImage`获取图片，可能会没有正确的后缀名 */
-				info.height = info.width = info.size = 0;
-				info.type = "image";
-			}
+			// 得不到图片的信息了，不管啦
+			std::string md5_str = StrTool::toupper(md5(file_str));
+			std::string cqimg_name = md5_str + ".cqimg";
 
-			if (md5_str != "") {
-				info.md5_str = md5_str;
-			}
-
-			if (info.md5_str == "")
-			{
-				MiraiLog::get_instance()->add_warning_log("Center", "无法从file字段获取图片的md5???");
-				node = Json::Value();
-				continue;
-			}
-
-			std::string cqimg_name = info.md5_str + "." + info.type;
 			/* 创建目录 */
 			std::string exe_dir = PathTool::get_exe_dir();
 			PathTool::create_dir(exe_dir + "data");
 			PathTool::create_dir(exe_dir + "data\\image");
-			std::string cqimg_path = exe_dir + "data\\image\\" + cqimg_name + ".cqimg";
+			std::string cqimg_path = exe_dir + "data\\image\\" + cqimg_name;
 			/* 此处将图片信息直接写入cqimg文件即可 */
-			WritePrivateProfileStringA("image", "md5", info.md5_str.c_str(), cqimg_path.c_str());
-			WritePrivateProfileStringA("image", "width", std::to_string(info.width).c_str(), cqimg_path.c_str());
-			WritePrivateProfileStringA("image", "height", std::to_string(info.height).c_str(), cqimg_path.c_str());
-			WritePrivateProfileStringA("image", "size", std::to_string(info.size).c_str(), cqimg_path.c_str());
-			WritePrivateProfileStringA("image", "url", url.c_str(), cqimg_path.c_str());
+			//WritePrivateProfileStringA("image", "md5", info.md5_str.c_str(), cqimg_path.c_str());
+			//WritePrivateProfileStringA("image", "width", std::to_string(info.width).c_str(), cqimg_path.c_str());
+			//WritePrivateProfileStringA("image", "height", std::to_string(info.height).c_str(), cqimg_path.c_str());
+			//WritePrivateProfileStringA("image", "size", std::to_string(info.size).c_str(), cqimg_path.c_str());
+			WritePrivateProfileStringA("image", "url", file_str.c_str(), cqimg_path.c_str());
 			WritePrivateProfileStringA("image", "addtime", std::to_string(time(0)).c_str(), cqimg_path.c_str());
 			WritePrivateProfileStringA("notice", "致开发者", "由于消息服务器的更新，本文件中的 url 已被弃用，并将在未来被移除，请勿直接读取本文件。请更新至最新版 SDK，并使用 Api（CQ_getImage, 接收图片）读取本图片。", cqimg_path.c_str());
 			if (!PathTool::is_file_exist(cqimg_path))

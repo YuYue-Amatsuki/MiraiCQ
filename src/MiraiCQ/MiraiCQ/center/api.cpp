@@ -1280,6 +1280,37 @@ std::string Center::CQ_getRecordV2(int auth_code, const char* file, const char* 
 	return std::string();
 }
 
+static bool is_img_file_exist(const std::string& cqimg_file) {
+	if (cqimg_file.length() < 6) {
+		return false;
+	}
+	std::string base = cqimg_file.substr(0, cqimg_file.length() - 6);
+	return (PathTool::is_file_exist(base + ".png")
+		|| PathTool::is_file_exist(base + ".jpg")
+		|| PathTool::is_file_exist(base + ".gif")
+		|| PathTool::is_file_exist(base + ".bmp"));
+}
+
+static std::string get_img_file_savepath(const std::string& cqimg_file) {
+	if (cqimg_file.length() < 6) {
+		return "";
+	}
+	std::string base = cqimg_file.substr(0, cqimg_file.length() - 6);
+	if (PathTool::is_file_exist(base + ".png")) {
+		return base + ".png";
+	}
+	if (PathTool::is_file_exist(base + ".jpg")) {
+		return base + ".jpg";
+	}
+	if (PathTool::is_file_exist(base + ".gif")) {
+		return base + ".gif";
+	}
+	if (PathTool::is_file_exist(base + ".bmp")) {
+		return base + ".bmp";
+	}
+	return "";
+}
+
 std::string Center::CQ_getImage(int auth_code, const char* file)
 {
 
@@ -1289,13 +1320,16 @@ std::string Center::CQ_getImage(int auth_code, const char* file)
 		return "";
 	}
 	auto img_dir = PathTool::get_exe_dir() + "data\\image\\";
-	auto cqimg_path = img_dir + file + ".cqimg";
-	if (!PathTool::is_file_exist(cqimg_path))
+	auto cqimg_file = img_dir + file;
+	if (!StrTool::end_with(cqimg_file, ".cqimg")) {
+		return "";
+	}
+	if (!PathTool::is_file_exist(cqimg_file))
 	{
 		//无cqimg文件，无法获取图片
 		return "";
 	}
-	auto url = StrTool::get_str_from_ini(cqimg_path, "image", "url", "");
+	auto url = StrTool::get_str_from_ini(cqimg_file, "image", "url", "");
 	if (url == "")
 	{
 		//没有读取到url
@@ -1305,6 +1339,12 @@ std::string Center::CQ_getImage(int auth_code, const char* file)
 	static std::mutex mx;
 	static std::set<std::string> downing_set;
 	bool is_downloading = false;
+
+	std::string save_path = get_img_file_savepath(cqimg_file);
+
+	if (save_path != "") {
+		return save_path;
+	}
 
 	/* 检查是否正在其他插件中被下载 */
 	{
@@ -1321,30 +1361,38 @@ std::string Center::CQ_getImage(int auth_code, const char* file)
 			is_downloading = true;
 		}
 	}
-
-	/* 没有正在下载，说明该自己下载 */
-	if (!is_downloading)
-	{
-		/* 如果图片已经存在，就不用真正下载了 */
-		if (!PathTool::is_file_exist(img_dir + file))
-		{
-			try
-			{
-				/* 下载图片 */
-				if (ImgTool::download_img(url, img_dir + file + ".tmp"))
-				{
-					PathTool::rename(img_dir + file + ".tmp", img_dir + file);
-				}
-				else
-				{
-					MiraiLog::get_instance()->add_debug_log("Center", "图片下载失败");
-				}
+	if (is_downloading == false) {
+		/* 下载图片 */
+		std::string image_content;
+		if (!ImgTool::download_img(url, image_content)) {
+			MiraiLog::get_instance()->add_debug_log("Center", "图片下载失败");
+		}
+		else {
+			ImgTool::ImgInfo img_info = ImgTool::parse_img(image_content);
+			if (img_info.type == "") {
+				MiraiLog::get_instance()->add_debug_log("Center", "图片解析失败");
 			}
-			catch (const std::exception&)
-			{
-				MiraiLog::get_instance()->add_debug_log("Center", "图片下载失败");
+			else {
+				std::string base = cqimg_file.substr(0, cqimg_file.length() - 6);
+				std::string save_path_t = base + "." + img_info.type;
+				try {
+					std::ofstream out_file;
+					out_file.open(save_path_t, std::ios::binary);
+					if (!out_file.is_open())
+					{
+						MiraiLog::get_instance()->add_debug_log("Center", "图片保存失败");
+					}
+					else {
+						out_file.write(image_content.data(), image_content.size());
+						out_file.close();
+					}
+				}
+				catch (const std::exception&)
+				{
+					MiraiLog::get_instance()->add_debug_log("Center", "图片保存失败");
+				}
+				save_path = save_path_t;
 			}
-				
 		}
 		/* 图片下载完成(包括失败)，删除正在下载的标记 */
 		std::lock_guard<std::mutex> lock(mx);
@@ -1362,17 +1410,13 @@ std::string Center::CQ_getImage(int auth_code, const char* file)
 			}
 		}
 		/* 睡眠一段时间 */
-		TimeTool::sleep(0);
+		TimeTool::sleep(1);
 	}
 
-	/* 检查是否下载成功 */
-	if (!PathTool::is_file_exist(img_dir + file))
-	{
-		//没有下载成功
-		return "";
-	}
-	/* 下载成功，返回路径 */
-	return img_dir + file;
+	/* 获得下载后的文件路径 */
+	save_path = get_img_file_savepath(cqimg_file);
+
+	return save_path;
 }
 
 

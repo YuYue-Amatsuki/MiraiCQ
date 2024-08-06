@@ -226,7 +226,7 @@
   </ImportGroup>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
-      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+      <ErrorText>这台计算机上缺少此项目引用的 NuGet 程序包。使用“NuGet 程序包还原”可下载这些程序包。有关更多信息，请参见 http://go.microsoft.com/fwlink/?LinkID=322105。缺少的文件是 {0}。</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\curl-vc140-static-32_64.7.53.0\build\native\curl-vc140-static-32_64.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\curl-vc140-static-32_64.7.53.0\build\native\curl-vc140-static-32_64.targets'))" />
     <Error Condition="!Exists('..\packages\openssl-vc140-static-32_64.1.1.0\build\native\openssl-vc140-static-32_64.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\openssl-vc140-static-32_64.1.1.0\build\native\openssl-vc140-static-32_64.targets'))" />
