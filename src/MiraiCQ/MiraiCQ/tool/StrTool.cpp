@@ -141,11 +141,11 @@ int64_t StrTool::get_int64_from_json(const Json::Value& json, const std::string&
 	{
 		return json_value.asInt64();
 	}
-	else if (json_value.isString()) {
+	else if (json_value.isString()) { 
 		try {
 			return std::stoll(json_value.asString());
 		}
-		catch (const std::exception& e) {
+		catch (const std::exception&) {
 			return default_value;
 		}
 	}

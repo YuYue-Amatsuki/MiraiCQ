@@ -475,6 +475,13 @@ static bool deal_json_array(Json::Value & json_arr)
 			Json::Value id_json = node["data"]["id"];
 			node["data"]["id"] = MsgIdTool::getInstance()->to_cqid(id_json);
 		}
+		else if (type_str == "at")
+		{
+			/* Ö»±£Áôqq */
+			Json::Value data;
+			data["qq"] = node["data"]["qq"];
+			node["data"] = data;
+		} 
 		//else if (type_str == "face") 
 		//{
 		//	// [CQ:face,id=324,type=sticker] -> [CQ:face,id=324]
