@@ -15,6 +15,8 @@
 #include <FL/Fl_BMP_Image.H>
 #include <FL/Fl_JPEG_Image.H>
 
+// Include for tray icon functionality
+#include <shellapi.h>
 
 #include "../log/MiraiLog.h"
 #include "../center/center.h"
@@ -34,6 +36,8 @@
 #include <memory>
 
 #include "../resource.h"
+
+const char* VERSION = "2.4.5";
 
 
 static std::atomic_int gui_flush = 0;
@@ -100,12 +104,12 @@ static bool login(LOGIN_INFO* login_info)
 		}
 
 		}).detach();
-		if (!Center::get_instance()->run())
-		{
-			MiraiLog::get_instance()->add_debug_log("Center", "Center运行失败");
-			return false;
-		}
-		return true;
+	if (!Center::get_instance()->run())
+	{
+		MiraiLog::get_instance()->add_debug_log("Center", "Center运行失败");
+		return false;
+	}
+	return true;
 }
 
 static void login_dlg_cb(Fl_Widget* o, void* p) {
@@ -134,7 +138,8 @@ static void login_dlg_cb(Fl_Widget* o, void* p) {
 static bool login_dlg()
 {
 	LOGIN_INFO login_info;
-	Fl_Window win(300, 180, "MiraiCQ V2.4.5");
+	std::string title = std::string("MiraiCQ V") + VERSION;
+	Fl_Window win(300, 180, title.c_str());
 	win.begin();
 	login_info.ws_url = Config::get_instance()->get_ws_url();
 	login_info.access_token = Config::get_instance()->get_access_token();
@@ -215,7 +220,7 @@ public:
 				}
 				else {
 					std::string err;
-					if (!MiraiPlus::get_instance()->enable_plus(ac,err)) {
+					if (!MiraiPlus::get_instance()->enable_plus(ac, err)) {
 						MiraiLog::get_instance()->add_fatal_log("MAINPROCESS", err);
 						exit(-1);
 					}
@@ -225,7 +230,7 @@ public:
 			else { //点击的是插件菜单
 				center->call_menu_fun_by_ac(ac, R);
 			}
-			
+
 		}
 	}
 	static void event_callback(Fl_Widget*, void* v) {
@@ -281,11 +286,11 @@ public:
 			data.clear();
 			data.push_back(StrTool::to_utf8("启用插件"));
 		}
-		
+
 		rows(0);
 		rows(data.size());
 	}
-	~MyTable2() { }
+	~MyTable2() {}
 };
 // 插件列表
 class MyTable : public Fl_Table {
@@ -317,19 +322,19 @@ class MyTable : public Fl_Table {
 			fl_font(FL_HELVETICA, 16);              // set the font for our drawing operations
 			return;
 		case CONTEXT_COL_HEADER:                  // Draw column headers
-			sprintf_s(s, "%s", arr[COL]); 
+			sprintf_s(s, "%s", arr[COL]);
 			DrawHeader(s, X, Y, W, H);
 			return;
 		case CONTEXT_CELL:                        // Draw data in cells
-			{
-				sprintf_s(s, "%s", StrTool::to_utf8(data.at(ROW).second->name).c_str());
-				bool is_enable = MiraiPlus::get_instance()->is_enable(data.at(ROW).second->ac);
-				if (!is_enable) {
-					sprintf_s(s, "[X] %s", std::string(s).c_str());
-				}
-				DrawData(s, X, Y, W, H);
-				return;
-			}	
+		{
+			sprintf_s(s, "%s", StrTool::to_utf8(data.at(ROW).second->name).c_str());
+			bool is_enable = MiraiPlus::get_instance()->is_enable(data.at(ROW).second->ac);
+			if (!is_enable) {
+				sprintf_s(s, "[X] %s", std::string(s).c_str());
+			}
+			DrawData(s, X, Y, W, H);
+			return;
+		}
 		default:
 			return;
 		}
@@ -403,7 +408,7 @@ public:
 		//开启定时器，用于定时刷新界面
 		Fl::add_timeout(1.0, callback_timer, (void*)this);
 	}
-	~MyTable() { }
+	~MyTable() {}
 };
 
 
@@ -419,7 +424,7 @@ public:
 				return ret;
 			}
 			std::string img_path = PathTool::get_exe_dir() + "config\\tou.jpg";
-			bool is_download = ImgTool::download_img("http://q1.qlogo.cn/g?b=qq&nk=" + std::to_string(qq) + "&s=640", img_path);
+			bool is_download = ImgTool::download_img("http://thirdqq.qlogo.cn/g?b=qq&nk=" + std::to_string(qq) + "&s=640", img_path);
 			if (!is_download) {
 				MiraiLog::get_instance()->add_warning_log("mainprocess", "获取头像失败,无法下载头像");
 				return ret;
@@ -436,7 +441,7 @@ public:
 		return ret;
 	}
 	MyImageBox(int X, int Y, int W, int H, const char* l = 0) : Fl_Box(X, Y, W, H, l) {
-		
+
 	}
 
 };
@@ -448,13 +453,112 @@ static void ex_btn_cb(Fl_Widget* o, void* p)
 	dlg->show();
 }
 
+// Global variables for tray icon
+static NOTIFYICONDATA nid = { 0 };
+static Fl_Double_Window* g_main_window = nullptr;
+static bool g_exit_flag = false;
+
+// Create tray icon
+static void create_tray_icon(HWND hwnd) {
+	nid.cbSize = sizeof(NOTIFYICONDATA);
+	nid.hWnd = hwnd;
+	nid.uID = 1;
+	nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+	nid.uCallbackMessage = WM_USER + 1;
+
+	// Load icon from resource
+	nid.hIcon = LoadIcon(fl_display, MAKEINTRESOURCE(IDI_ICON1));
+
+	// Set tooltip
+	strcpy_s(nid.szTip, "MiraiCQ");
+
+	Shell_NotifyIcon(NIM_ADD, &nid);
+}
+
+// Remove tray icon
+static void remove_tray_icon() {
+	Shell_NotifyIcon(NIM_DELETE, &nid);
+}
+
+// Show the main window
+static void show_main_window() {
+	if (g_main_window) {
+		g_main_window->show();
+		SetForegroundWindow((HWND)fl_xid(g_main_window));
+	}
+}
+
+// Handle window close event
+static void window_callback(Fl_Widget* widget, void*) {
+	widget->hide();
+}
+
+// Handle tray icon messages
+static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+	if (msg == WM_USER + 1) {
+		switch (lParam) {
+		case WM_LBUTTONUP:
+			// Left click: Show the main window
+			show_main_window();
+			break;
+		case WM_RBUTTONUP:
+			// Right click: Show context menu
+			POINT pt;
+			GetCursorPos(&pt);
+			HMENU hMenu = CreatePopupMenu();
+			if (hMenu) {
+				InsertMenuA(hMenu, 0, MF_BYPOSITION | MF_STRING, 1, "退出");
+
+				// Track the popup menu
+				SetForegroundWindow(hwnd);
+				int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY,
+					pt.x, pt.y, 0, hwnd, NULL);
+
+				if (cmd == 1) {
+					// Exit option selected
+					g_exit_flag = true;
+					if (g_main_window) {
+						g_main_window->hide();
+					}
+				}
+				DestroyMenu(hMenu);
+			}
+			break;
+		}
+	}
+	return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+// Create hidden window to handle tray messages
+static HWND create_message_window() {
+	static const char* class_name = "MiraiCQMessageWindow";
+
+	// Register window class
+	WNDCLASSA wc = { 0 };
+	wc.lpfnWndProc = WndProc;
+	wc.hInstance = GetModuleHandle(NULL);
+	wc.lpszClassName = class_name;
+	RegisterClassA(&wc);
+
+	// Create the hidden window
+	return CreateWindowA(class_name, "MiraiCQMessage", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, wc.hInstance, NULL);
+}
+
 static void plus_dlg()
 {
 	//fl_register_images();
-	std::string str1 = StrTool::to_utf8("MiraiCQ插件管理V2.4.5 " + Config::get_instance()->get_name());
+
+	std::string str1 = StrTool::to_utf8(std::string("MiraiCQ插件管理 V") + VERSION + Config::get_instance()->get_name());
 	Fl_Double_Window win(508, 400, str1.c_str());
 	win.color(fl_rgb_color(0, 255, 255));
 	win.size_range(500, 400, 500, 400);
+
+	// Set callback to handle window close
+	win.callback(window_callback);
+
+	// Store global reference to the window
+	g_main_window = &win;
+
 	// table2为插件菜单
 	MyTable2 table2(200, 280, 300, 110);
 	std::string str2 = StrTool::to_utf8("插件名：");
@@ -480,13 +584,63 @@ static void plus_dlg()
 	// table为插件列表
 	MyTable table(10, 115, 180, 245, &table2, &box_name, &box_author, &box_version, &edit_des);
 	std::string ex_btn_str = StrTool::to_utf8("详细设置");
-	Fl_Button ex_btn(10, 365, 180, 25,ex_btn_str.c_str());
+	Fl_Button ex_btn(10, 365, 180, 25, ex_btn_str.c_str());
 	ex_btn.color(fl_rgb_color(255, 255, 255));
 	ex_btn.callback(ex_btn_cb, 0);
 	win.end();
 	win.icon((char*)LoadIcon(fl_display, MAKEINTRESOURCE(IDI_ICON1)));
 	win.show();
-	Fl::run();
+
+	// Create hidden window and tray icon
+	HWND message_hwnd = create_message_window();
+	create_tray_icon(message_hwnd);
+
+	// Run the event loop until exit is requested
+	while (!g_exit_flag) {
+		Fl::wait(0.1);
+	}
+
+	// Remove tray icon before exiting
+	remove_tray_icon();
+	DestroyWindow(message_hwnd);
+
+	auto center = Center::get_instance();
+
+	/* 结束守护线程 */
+	//can_protect = false;
+	//while (is_protect);
+
+	/* 7秒后强行退出退出 */
+	std::thread([]() {
+		TimeTool::sleep(7000);
+		MiraiLog::get_instance()->add_warning_log("EXIT", "有插件不愿意自己结束自己.jpg");
+		exit(-1);
+		}).detach();
+
+	/* 发送插件卸载事件 */
+	center->del_all_plus();
+
+	/* 等待插件进程全部结束 */
+	MiraiLog::get_instance()->add_info_log("EXIT", "正在安全卸载所有插件");
+	while (true) {
+		auto plus_vec = MiraiPlus::get_instance()->get_all_plus();
+		bool is_all_close = true;
+		for (auto plus : plus_vec)
+		{
+			bool ret = plus.second->is_process_exist();
+			if (ret == true) {
+				is_all_close = false;
+			}
+		}
+		if (is_all_close) {
+			break;
+		}
+	}
+
+	MiraiLog::get_instance()->add_info_log("EXIT", "已经安全卸载所有插件");
+
+	/* 退出 */
+	exit(0);
 }
 
 static void hide_all_window()
@@ -556,7 +710,7 @@ static void release_dll()
 	CloseHandle(hFile);
 }
 
-static void release_config(int idr, const std::string & filename)
+static void release_config(int idr, const std::string& filename)
 {
 	std::string bmp_dir = PathTool::get_exe_dir() + "config\\";
 	std::string bmp_file = bmp_dir + filename;
@@ -573,7 +727,7 @@ static void release_config(int idr, const std::string & filename)
 	PathTool::create_dir(bmp_dir);
 	HANDLE hFile = CreateFileA(bmp_file.c_str(), GENERIC_WRITE, NULL, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, NULL);
 	if (hFile == INVALID_HANDLE_VALUE) {
-		MiraiLog::get_instance()->add_fatal_log("RELEASE_"+ filename, "CreateFileA err");
+		MiraiLog::get_instance()->add_fatal_log("RELEASE_" + filename, "CreateFileA err");
 		exit(-1);
 	}
 	DWORD dwWrite = 0;
@@ -638,14 +792,14 @@ void mainprocess()
 		hide_all_window();
 	}
 
-	MiraiLog::get_instance()->add_info_log("VERSION", "V2.4.5");
+	MiraiLog::get_instance()->add_info_log("VERSION", std::string("V") + VERSION);
 	MiraiLog::get_instance()->add_info_log("CORE", "开源地址：https://github.com/super1207/MiraiCQ");
 
 	// 释放CQP.dll
 	release_dll();
 
-	release_config(IDR_DLL_BIN2,"luna_sama.bmp");
-	release_config(IDR_DLL_BIN3,"debug_tip.json");
+	release_config(IDR_DLL_BIN2, "luna_sama.bmp");
+	release_config(IDR_DLL_BIN3, "debug_tip.json");
 
 
 	// 初始化IPC服务
@@ -663,7 +817,7 @@ void mainprocess()
 		while (true) {
 			IPC_ApiRecv(do_api_call);
 		}
-	}).detach();
+		}).detach();
 
 	/* 加载并启用所有插件 */
 	Center::get_instance()->load_all_plus();
@@ -696,51 +850,14 @@ void mainprocess()
 					break;
 				TimeTool::sleep(50);
 			}
-			
+
 		}
 		is_protect = false;
-	}).detach();
+		}).detach();
 
 	while (!is_protect);
 
 	/* 打开插件菜单 */
 	plus_dlg();
 
-	auto center = Center::get_instance();
-
-	/* 结束守护线程 */
-	can_protect = false;
-	while (is_protect);
-
-	/* 7秒后强行退出退出 */
-	std::thread([]() {
-		TimeTool::sleep(7000);
-		MiraiLog::get_instance()->add_warning_log("EXIT", "有插件不愿意自己结束自己.jpg");
-		exit(-1);
-	}).detach();
-
-	/* 发送插件卸载事件 */
-	center->del_all_plus();
-
-	/* 等待插件进程全部结束 */
-	MiraiLog::get_instance()->add_info_log("EXIT", "正在安全卸载所有插件");
-	while (true) {
-		auto plus_vec = MiraiPlus::get_instance()->get_all_plus();
-		bool is_all_close = true;
-		for (auto plus : plus_vec)
-		{
-			bool ret = plus.second->is_process_exist();
-			if (ret == true) {
-				is_all_close = false;
-			}
-		}
-		if (is_all_close) {
-			break;
-		}
-	}
-
-	MiraiLog::get_instance()->add_info_log("EXIT", "已经安全卸载所有插件");
-
-	/* 退出 */
-	exit(0);
 }
