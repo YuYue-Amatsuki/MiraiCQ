@@ -48,7 +48,7 @@ Windows 7 with sp1 以及更新的版本，系统语言必须是中文。
 
 #### 交流与问题反馈：
 1. [issues](https://github.com/super1207/MiraiCQ/issues)
-2. QQ群：920220179 (欢迎来玩
+2. QQ群：556515826 (欢迎来玩
 
 #### 常见问题解答：
 1. 某些原CQ插件会依赖一些CQ的dll，可以将其放入bin目录（自行创建）。
