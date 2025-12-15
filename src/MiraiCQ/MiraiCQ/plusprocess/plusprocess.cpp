@@ -1,7 +1,8 @@
 #include "plusprocess.h"
 
 
-#include<thread>
+#include <thread>
+#include <atomic>
 #include <jsoncpp/json.h>
 #include <Windows.h>
 #include <assert.h>
@@ -15,9 +16,111 @@
 #include "../tool/ThreadTool.h"
 
 #include <tlhelp32.h>
+#include <set>
 
 
 extern std::string g_main_flag;
+
+
+// 已处理过样式的窗口集合
+static std::set<HWND> g_processed_windows;
+static std::mutex g_processed_windows_mutex;
+static DWORD g_current_pid = 0;
+
+// 将当前进程的所有窗口置于前台并添加任务栏图标
+static BOOL CALLBACK EnumWindowsCallback(HWND hwnd, LPARAM lParam)
+{
+	// 获取窗口所属进程 ID
+	DWORD pid = 0;
+	GetWindowThreadProcessId(hwnd, &pid);
+
+	// 只处理属于当前进程的窗口
+	if (pid != g_current_pid)
+	{
+		return TRUE; // 继续枚举
+	}
+
+	if (IsWindowVisible(hwnd))
+	{
+		bool already_processed = false;
+		{
+			std::lock_guard<std::mutex> lk(g_processed_windows_mutex);
+			already_processed = g_processed_windows.find(hwnd) != g_processed_windows.end();
+		}
+
+		// 只对新窗口修改样式（只做一次）
+		if (!already_processed)
+		{
+			// 修改窗口扩展样式，添加 WS_EX_APPWINDOW 使其显示在任务栏
+			LONG_PTR ex_style = GetWindowLongPtrA(hwnd, GWL_EXSTYLE);
+			// 添加 WS_EX_APPWINDOW，移除 WS_EX_TOOLWINDOW
+			LONG_PTR new_style = (ex_style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW;
+			if (new_style != ex_style)
+			{
+				SetWindowLongPtrA(hwnd, GWL_EXSTYLE, new_style);
+				// 需要重新显示窗口以应用样式变化
+				ShowWindow(hwnd, SW_HIDE);
+				ShowWindow(hwnd, SW_SHOW);
+			}
+
+			// 记录已处理
+			{
+				std::lock_guard<std::mutex> lk(g_processed_windows_mutex);
+				g_processed_windows.insert(hwnd);
+			}
+
+			// 使用 AttachThreadInput 技巧来绕过前台窗口限制
+			HWND fg_hwnd = GetForegroundWindow();
+			if (fg_hwnd != NULL)
+			{
+				DWORD fg_tid = GetWindowThreadProcessId(fg_hwnd, NULL);
+				DWORD our_tid = GetCurrentThreadId();
+
+				if (fg_tid != our_tid)
+				{
+					// 附加到前台窗口的线程
+					AttachThreadInput(our_tid, fg_tid, TRUE);
+
+					// 现在可以设置前台窗口了
+					SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+					SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+					ShowWindow(hwnd, SW_RESTORE);
+					SetForegroundWindow(hwnd);
+
+					// 分离线程
+					AttachThreadInput(our_tid, fg_tid, FALSE);
+				}
+				else
+				{
+					SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+					SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+					ShowWindow(hwnd, SW_RESTORE);
+					SetForegroundWindow(hwnd);
+				}
+			}
+			else
+			{
+				// 回退到简单方法
+				SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+				SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+				ShowWindow(hwnd, SW_RESTORE);
+				SetForegroundWindow(hwnd);
+			}
+		}
+	}
+
+	return TRUE; // 继续枚举
+}
+
+// 将插件窗口置于前台
+static void bring_plugin_windows_to_front()
+{
+	if (g_current_pid == 0)
+	{
+		g_current_pid = GetCurrentProcessId();
+	}
+	EnumWindows(EnumWindowsCallback, 0);
+}
 static std::string g_dll_path;
 
 /* 用于从插件dll中获取函数地址 */
@@ -117,7 +220,36 @@ static void call_start(void* user_data)
 static void call_menu(void* user_data)
 {
 	typedef __int32(__stdcall* fun_ptr_type_1)();
+
+	// 重置已处理窗口集合
+	{
+		std::lock_guard<std::mutex> lk(g_processed_windows_mutex);
+		g_processed_windows.clear();
+	}
+
+	// 启动一个线程来持续将新窗口置于前台
+	std::atomic<bool> running(true);
+	std::thread window_thread([&running]() {
+		// 等待一小段时间让窗口创建
+		Sleep(200);
+		int attempts = 0;
+		while (running.load() && attempts < 50)
+		{
+			bring_plugin_windows_to_front();
+			Sleep(100);
+			attempts++;
+		}
+	});
+
+	// 调用菜单函数
 	((fun_ptr_type_1)user_data)();
+
+	// 停止置顶线程
+	running.store(false);
+	if (window_thread.joinable())
+	{
+		window_thread.join();
+	}
 }
 
 /* IPC_ApiRecv的回调函数，用于接收主进程的指令 */

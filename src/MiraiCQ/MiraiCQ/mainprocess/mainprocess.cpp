@@ -37,7 +37,7 @@
 
 #include "../resource.h"
 
-const char* VERSION = "2.4.5";
+const char* VERSION = "2.4.6";
 
 
 static std::atomic_int gui_flush = 0;
@@ -407,6 +407,14 @@ public:
 		this->edit_des = edit_des;
 		//开启定时器，用于定时刷新界面
 		Fl::add_timeout(1.0, callback_timer, (void*)this);
+		// 如果有插件，自动选中第一个
+		if (!data.empty()) {
+			box_name->copy_label(StrTool::to_utf8(data.at(0).second->name).c_str());
+			box_version->copy_label(StrTool::to_utf8(data.at(0).second->version).c_str());
+			box_author->copy_label(StrTool::to_utf8(data.at(0).second->author).c_str());
+			edit_des->value(StrTool::to_utf8(data.at(0).second->description).c_str());
+			tb2->set_ac(data.at(0).first);
+		}
 	}
 	~MyTable() {}
 };
